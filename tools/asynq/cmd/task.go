@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/fatih/color"
 	"github.com/hibiken/asynq"
 	"github.com/spf13/cobra"
@@ -74,6 +75,11 @@ func init() {
 var taskCmd = &cobra.Command{
 	Use:   "task <command> [flags]",
 	Short: "Manage tasks",
+	Example: heredoc.Doc(`
+		$ asynq task ls --queue=myqueue --state=scheduled
+		$ asynq task inspect --queue=myqueue --id=7837f142-6337-4217-9276-8f27281b67d1
+		$ asynq task delete --queue=myqueue --id=7837f142-6337-4217-9276-8f27281b67d1
+		$ asynq task deleteall --queue=myqueue --state=archived`),
 }
 
 var taskListCmd = &cobra.Command{
