@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.25.0] - 2023-07-30
-
 ### Added
 - `IsPanicError` function is added to support catching of panic errors when processing tasks (PR: https://github.com/hibiken/asynq/pull/491)
 
