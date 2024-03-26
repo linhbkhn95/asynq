@@ -45,6 +45,10 @@ func newForwarder(params forwarderParams) *forwarder {
 	}
 }
 
+func (f *forwarder) SetQueues(queues []string) {
+	f.queues = queues
+}
+
 func (f *forwarder) shutdown() {
 	f.logger.Debug("Forwarder shutting down...")
 	// Signal the forwarder goroutine to stop polling.

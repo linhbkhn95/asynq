@@ -90,6 +90,10 @@ func (a *aggregator) shutdown() {
 	a.done <- struct{}{}
 }
 
+func (a *aggregator) SetQueues(queues []string) {
+	a.queues = queues
+}
+
 func (a *aggregator) start(wg *sync.WaitGroup) {
 	if a.ga == nil {
 		return

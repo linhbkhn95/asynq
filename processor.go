@@ -90,18 +90,12 @@ type processorParams struct {
 
 // newProcessor constructs a new processor.
 func newProcessor(params processorParams) *processor {
-	queues := normalizeQueues(params.queues)
-	orderedQueues := []string(nil)
-	if params.strictPriority {
-		orderedQueues = sortByPriority(queues)
-	}
-	return &processor{
+
+	p := &processor{
 		logger:          params.logger,
 		broker:          params.broker,
 		baseCtxFn:       params.baseCtxFn,
 		clock:           timeutil.NewRealClock(),
-		queueConfig:     queues,
-		orderedQueues:   orderedQueues,
 		retryDelayFunc:  params.retryDelayFunc,
 		isFailureFunc:   params.isFailureFunc,
 		syncRequestCh:   params.syncCh,
@@ -117,6 +111,18 @@ func newProcessor(params processorParams) *processor {
 		starting:        params.starting,
 		finished:        params.finished,
 	}
+	p.SetQueues(params.queues, params.strictPriority)
+	return p
+}
+
+func (p *processor) SetQueues(queues map[string]int, strictPriority bool) {
+	queues = normalizeQueues(queues)
+	orderedQueues := []string(nil)
+	if strictPriority {
+		orderedQueues = sortByPriority(queues)
+		p.orderedQueues = orderedQueues
+	}
+	p.queueConfig = queues
 }
 
 // Note: stops only the "processor" goroutine, does not stop workers.

@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/hibiken/asynq/internal/base"
 	"github.com/hibiken/asynq/internal/log"
 	"github.com/hibiken/asynq/internal/rdb"
+	"github.com/redis/go-redis/v9"
 )
 
 // Server is responsible for task processing and task lifecycle management.
@@ -422,22 +422,11 @@ func NewServer(r RedisConnOpt, cfg Config) *Server {
 	if isFailureFunc == nil {
 		isFailureFunc = defaultIsFailureFunc
 	}
-	queues := make(map[string]int)
-	for qname, p := range cfg.Queues {
-		if err := base.ValidateQueueName(qname); err != nil {
-			continue // ignore invalid queue names
-		}
-		if p > 0 {
-			queues[qname] = p
-		}
-	}
+	queues := getQueues(cfg.Queues)
 	if len(queues) == 0 {
 		queues = defaultQueueConfig
 	}
-	var qnames []string
-	for q := range queues {
-		qnames = append(qnames, q)
-	}
+	qNames := extractQueueNames(queues)
 	shutdownTimeout := cfg.ShutdownTimeout
 	if shutdownTimeout == 0 {
 		shutdownTimeout = defaultShutdownTimeout
@@ -491,7 +480,7 @@ func NewServer(r RedisConnOpt, cfg Config) *Server {
 	forwarder := newForwarder(forwarderParams{
 		logger:   logger,
 		broker:   rdb,
-		queues:   qnames,
+		queues:   qNames,
 		interval: delayedTaskCheckInterval,
 	})
 	subscriber := newSubscriber(subscriberParams{
@@ -520,7 +509,7 @@ func NewServer(r RedisConnOpt, cfg Config) *Server {
 		broker:         rdb,
 		retryDelayFunc: delayFunc,
 		isFailureFunc:  isFailureFunc,
-		queues:         qnames,
+		queues:         qNames,
 		interval:       1 * time.Minute,
 	})
 	healthchecker := newHealthChecker(healthcheckerParams{
@@ -532,13 +521,13 @@ func NewServer(r RedisConnOpt, cfg Config) *Server {
 	janitor := newJanitor(janitorParams{
 		logger:   logger,
 		broker:   rdb,
-		queues:   qnames,
+		queues:   qNames,
 		interval: 8 * time.Second,
 	})
 	aggregator := newAggregator(aggregatorParams{
 		logger:          logger,
 		broker:          rdb,
-		queues:          qnames,
+		queues:          qNames,
 		gracePeriod:     groupGracePeriod,
 		maxDelay:        cfg.GroupMaxDelay,
 		maxSize:         cfg.GroupMaxSize,
@@ -604,6 +593,39 @@ func (srv *Server) Run(handler Handler) error {
 	srv.waitForSignals()
 	srv.Shutdown()
 	return nil
+}
+
+func (srv *Server) SetQueues(queues map[string]int, strictPriority bool) {
+	queues = getQueues(queues)
+	qNames := extractQueueNames(queues)
+
+	srv.heartbeater.SetQueues(queues)
+	srv.processor.SetQueues(queues, strictPriority)
+
+	srv.recoverer.SetQueues(qNames)
+	srv.aggregator.SetQueues(qNames)
+	srv.forwarder.SetQueues(qNames)
+}
+
+func getQueues(queuesConfig map[string]int) map[string]int {
+	queues := make(map[string]int)
+	for qname, p := range queuesConfig {
+		if err := base.ValidateQueueName(qname); err != nil {
+			continue // ignore invalid queue names
+		}
+		if p > 0 {
+			queues[qname] = p
+		}
+	}
+	return queues
+}
+
+func extractQueueNames(queues map[string]int) []string {
+	var qNames []string
+	for q := range queues {
+		qNames = append(qNames, q)
+	}
+	return qNames
 }
 
 // Start starts the worker server. Once the server has started,
