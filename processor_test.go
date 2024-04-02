@@ -964,3 +964,92 @@ func TestReturnPanicError(t *testing.T) {
 		})
 	}
 }
+
+func TestSetQueuesRuntime(t *testing.T) {
+	var (
+		r         = setup(t)
+		rdbClient = rdb.NewRDB(r)
+
+		m1 = h.NewTaskMessage("task1", nil)
+		m2 = h.NewTaskMessage("task2", nil)
+		m3 = h.NewTaskMessageWithQueue("task3", nil, "high")
+		m4 = h.NewTaskMessageWithQueue("task4", nil, "low")
+
+		t1 = NewTask(m1.Type, m1.Payload)
+		t2 = NewTask(m2.Type, m2.Payload)
+		t3 = NewTask(m3.Type, m3.Payload)
+		t4 = NewTask(m4.Type, m4.Payload)
+	)
+	defer r.Close()
+
+	tests := []struct {
+		pending                                  map[string][]*base.TaskMessage
+		queues                                   []string // list of queues to consume the tasks from
+		wantProcessed                            []*Task  // tasks to be processed at the end
+		wantProcessedAfterChangingPriorityQueues []*Task  // tasks to be processed at the end
+
+	}{
+		{
+			pending: map[string][]*base.TaskMessage{
+				"default": {m1, m2},
+				"high":    {m3},
+				"low":     {m4},
+			},
+			queues:                                   []string{"default", "high", "low"},
+			wantProcessed:                            []*Task{t1, t2, t3, t4},
+			wantProcessedAfterChangingPriorityQueues: []*Task{t4, t3, t1, t2},
+		},
+	}
+
+	for _, tc := range tests {
+		// Set up test case.
+		h.FlushDB(t, r)
+
+		// Instantiate a new processor.
+		var mu sync.Mutex
+		var processed []*Task
+		handler := func(ctx context.Context, task *Task) error {
+			mu.Lock()
+			defer mu.Unlock()
+			processed = append(processed, task)
+			return nil
+		}
+		p := newProcessorForTest(t, rdbClient, HandlerFunc(handler))
+		p.queueConfig = map[string]int{
+			"default": 2,
+			"high":    3,
+			"low":     1,
+		}
+
+		p.start(&sync.WaitGroup{})
+
+		// Wait for two second to allow all pending tasks to be processed.
+		time.Sleep(2 * time.Second)
+
+		// Make sure no messages are stuck in active list.
+		for _, qname := range tc.queues {
+			if l := r.LLen(context.Background(), base.ActiveKey(qname)).Val(); l != 0 {
+				t.Errorf("%q has %d tasks, want 0", base.ActiveKey(qname), l)
+			}
+		}
+		p.SetQueues(map[string]int{
+			"default": 2,
+			"high":    3,
+			"low":     4,
+		}, true)
+		processed = nil
+		h.SeedAllPendingQueues(t, r, tc.pending)
+		time.Sleep(1 * time.Second)
+		// Make sure no messages are stuck in active list.
+		for _, qname := range tc.queues {
+			if l := r.LLen(context.Background(), base.ActiveKey(qname)).Val(); l != 0 {
+				t.Errorf("%q has %d tasks, want 0", base.ActiveKey(qname), l)
+			}
+		}
+		if diff := cmp.Diff(tc.wantProcessedAfterChangingPriorityQueues, processed, taskCmpOpts...); diff != "" {
+			t.Errorf("mismatch found in processed tasks when changing priority queues; (-want, +got)\n%s", diff)
+		}
+		p.shutdown()
+
+	}
+}

@@ -71,6 +71,10 @@ func (j *janitor) start(wg *sync.WaitGroup) {
 	}()
 }
 
+func (j *janitor) setQueues(queues []string) {
+	j.queues = queues
+}
+
 func (j *janitor) exec() {
 	for _, qname := range j.queues {
 		if err := j.broker.DeleteExpiredCompletedTasks(qname); err != nil {
